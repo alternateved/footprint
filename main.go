@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/go-github/v89/github"
-	"github.com/joho/godotenv"
 )
 
 type report struct {
@@ -24,25 +23,7 @@ type report struct {
 }
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	ghToken := os.Getenv("GH_TOKEN")
-
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
-
-	client, err := github.NewClient(github.WithAuthToken(ghToken))
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	user := flag.String("u", "", "GitHub username")
 	org := flag.String("o", "", "GitHub organization")
 	year := flag.Int("y", time.Now().Year(), "year")
@@ -73,6 +54,22 @@ Flags:
 	}
 	if *month < 1 || *month > 12 {
 		log.Fatal("month must be between 1 and 12")
+	}
+
+	if ghToken == "" {
+		log.Fatal("GH_TOKEN not set")
+	}
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	client, err := github.NewClient(github.WithAuthToken(ghToken))
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	since := time.Date(*year, time.Month(*month), 1, 0, 0, 0, 0, time.UTC)
