@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -42,38 +43,54 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if len(os.Args) < 5 {
-		fmt.Println("Usage: footprint <USER> <ORG> <YEAR> <MONTH>")
+	user := flag.String("u", "", "GitHub username")
+	org := flag.String("o", "", "GitHub organization")
+	year := flag.Int("y", time.Now().Year(), "year")
+	month := flag.Int("m", int(time.Now().Month()), "month")
+
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), `footprint - report a user's monthly contributions in an org
+
+Usage:
+  footprint -u <USER> -o <ORG> [-y <YEAR>] [-m <MONTH>]
+
+Generates a per-repository list of commits and squash-merged PRs
+authored by the given user within the given month.
+
+Environment:
+  GH_TOKEN   GitHub personal access token (required)
+
+Flags:
+`)
+		flag.PrintDefaults()
 	}
 
-	user, org := os.Args[1], os.Args[2]
+	flag.Parse()
 
-	year, err := strconv.Atoi(os.Args[3])
-	if err != nil {
-		log.Fatal(err)
+	if *user == "" || *org == "" {
+		flag.Usage()
+		os.Exit(1)
+	}
+	if *month < 1 || *month > 12 {
+		log.Fatal("month must be between 1 and 12")
 	}
 
-	month, err := strconv.Atoi(os.Args[4])
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	since := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	since := time.Date(*year, time.Month(*month), 1, 0, 0, 0, 0, time.UTC)
 	until := since.AddDate(0, 1, 0).Add(-time.Nanosecond)
 
 	fmt.Printf("Report for user '%s' in organization '%s' (%s - %s)\n\n",
-		user,
-		org,
+		*user,
+		*org,
 		since.Format(time.DateOnly),
 		until.Format(time.DateOnly),
 	)
 
-	repos, err := fetchRepositories(ctx, client, org)
+	repos, err := fetchRepositories(ctx, client, *org)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	reports := fetchReports(ctx, client, repos, user, org, since, until)
+	reports := fetchReports(ctx, client, repos, *user, *org, since, until)
 	for _, report := range reports {
 		printReport(report)
 	}
