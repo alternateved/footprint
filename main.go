@@ -67,8 +67,9 @@ func main() {
 		log.Fatal(err)
 	}
 
+	prRe := regexp.MustCompile(`\(#(\d+)\)`)
 	for _, repo := range repos {
-		messages, err := getRepositoryReport(ctx, client, repo, user, org, since, until)
+		messages, err := getRepositoryReport(ctx, client, repo, user, org, since, until, prRe)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -137,9 +138,9 @@ func getRepositoryReport(
 	org string,
 	since,
 	until time.Time,
+	prRe *regexp.Regexp,
 ) ([]string, error) {
 	repoName := repo.GetName()
-	prRe := regexp.MustCompile(`\(#(\d+)\)`)
 	opt := &github.CommitsListOptions{
 		Author:      user,
 		Since:       since,
