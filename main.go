@@ -9,12 +9,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/google/go-github/v89/github"
 	"github.com/joho/godotenv"
 )
+
+type report struct {
+	name     string
+	messages []string
+}
 
 func main() {
 	err := godotenv.Load()
@@ -67,15 +73,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	prRe := regexp.MustCompile(`\(#(\d+)\)`)
-	for _, repo := range repos {
-		repoName := repo.GetName()
-		messages, err := getRepositoryReport(ctx, client, user, org, repoName, since, until, prRe)
-		if err != nil {
-			log.Printf("Failure for \"%s\" repository while fetching report: %v\n", repoName, err)
-			continue
-		}
-		printReport(repoName, messages)
+	reports := fetchReports(ctx, client, repos, user, org, since, until)
+	for _, report := range reports {
+		printReport(report)
 	}
 }
 
@@ -178,10 +178,45 @@ func getRepositoryReport(
 	return messages, nil
 }
 
-func printReport(repoName string, messages []string) {
-	if len(messages) > 0 {
-		fmt.Printf("Repository \"%s\" contributions:\n", repoName)
-		for _, m := range messages {
+func fetchReports(
+	ctx context.Context,
+	client *github.Client,
+	repos []*github.Repository,
+	user,
+	org string,
+	since,
+	until time.Time,
+) []report {
+	var wg sync.WaitGroup
+	prRe := regexp.MustCompile(`\(#(\d+)\)`)
+	reports := make([]report, len(repos))
+	sem := make(chan struct{}, 5)
+
+	for i, repo := range repos {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			repoName := repo.GetName()
+			messages, err := getRepositoryReport(ctx, client, user, org, repoName, since, until, prRe)
+			if err != nil {
+				log.Printf("Failure for \"%s\" repository while fetching report: %v\n", repoName, err)
+				return
+			}
+			reports[i] = report{repoName, messages}
+		}()
+	}
+	wg.Wait()
+
+	return reports
+}
+
+func printReport(report report) {
+	if len(report.messages) > 0 {
+		fmt.Printf("Repository \"%s\" contributions:\n", report.name)
+		for _, m := range report.messages {
 			fmt.Println(m)
 		}
 		fmt.Println()
