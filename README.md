@@ -10,13 +10,15 @@ go install github.com/alternateved/footprint@latest
 
 ## Authentication
 
-`footprint` requires a GitHub personal access token with `repo` scope when accessing private repositories, provided via environment variable:
+`footprint` requires a GitHub personal access token with `repo` scope when accessing private repositories. It resolves one from the following sources, in order:
+
+1. `GH_TOKEN` environment variable takes precedence.
 
 ```sh
 export GH_TOKEN=ghp_xxxx
 ```
 
-A `.env` file is also supported.
+2. `gh` - if the [GitHub CLI](https://cli.github.com) is installed and authenticated, `footprint` uses its token automatically.
 
 ## Usage
 

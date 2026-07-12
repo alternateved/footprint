@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strconv"
@@ -23,14 +24,13 @@ type report struct {
 }
 
 func main() {
-	ghToken := os.Getenv("GH_TOKEN")
 	user := flag.String("u", "", "GitHub username")
 	org := flag.String("o", "", "GitHub organization")
 	year := flag.Int("y", time.Now().Year(), "year")
 	month := flag.Int("m", int(time.Now().Month()), "month")
 
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), `footprint - report a user's monthly contributions in an org
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `footprint - report a user's monthly contributions in an org
 
 Usage:
   footprint -u <USER> -o <ORG> [-y <YEAR>] [-m <MONTH>]
@@ -38,8 +38,10 @@ Usage:
 Generates a per-repository list of commits and squash-merged PRs
 authored by the given user within the given month.
 
-Environment:
-  GH_TOKEN   GitHub personal access token (required)
+Authentication:
+  A GitHub token is resolved from, in order:
+    1. GH_TOKEN environment variable
+    2. gh CLI (gh auth login), if installed
 
 Flags:
 `)
@@ -56,9 +58,7 @@ Flags:
 		log.Fatal("month must be between 1 and 12")
 	}
 
-	if ghToken == "" {
-		log.Fatal("GH_TOKEN not set")
-	}
+	ghToken := resolveToken()
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -91,6 +91,19 @@ Flags:
 	for _, report := range reports {
 		printReport(report)
 	}
+}
+
+func resolveToken() string {
+	if t := os.Getenv("GH_TOKEN"); t != "" {
+		return t
+	}
+
+	out, err := exec.Command("gh", "auth", "token").Output()
+	if err != nil {
+		log.Fatal("no token: set GH_TOKEN or run `gh auth login`")
+	}
+
+	return strings.TrimSpace(string(out))
 }
 
 func fetchRepositories(
