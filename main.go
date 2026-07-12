@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/go-github/v89/github"
@@ -21,6 +23,14 @@ func main() {
 	}
 
 	ghToken := os.Getenv("GH_TOKEN")
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
 	client, err := github.NewClient(github.WithAuthToken(ghToken))
 	if err != nil {
 		log.Fatal(err)
@@ -52,13 +62,13 @@ func main() {
 		until.Format(time.DateOnly),
 	)
 
-	repos, err := fetchRepositories(client, org)
+	repos, err := fetchRepositories(ctx, client, org)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, repo := range repos {
-		messages, err := getRepositoryReport(client, repo, user, org, since, until)
+		messages, err := getRepositoryReport(ctx, client, repo, user, org, since, until)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -66,7 +76,11 @@ func main() {
 	}
 }
 
-func fetchRepositories(client *github.Client, org string) ([]*github.Repository, error) {
+func fetchRepositories(
+	ctx context.Context,
+	client *github.Client,
+	org string,
+) ([]*github.Repository, error) {
 	var repos []*github.Repository
 	opt := &github.RepositoryListByOrgOptions{
 		Type:        "all",
@@ -74,7 +88,7 @@ func fetchRepositories(client *github.Client, org string) ([]*github.Repository,
 	}
 
 	for {
-		rep, res, err := client.Repositories.ListByOrg(context.Background(), org, opt)
+		rep, res, err := client.Repositories.ListByOrg(ctx, org, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -88,12 +102,18 @@ func fetchRepositories(client *github.Client, org string) ([]*github.Repository,
 	return repos, nil
 }
 
-func getMergeCommitSHAs(client *github.Client, org, repo string, pr int) []string {
+func getMergeCommitSHAs(
+	ctx context.Context,
+	client *github.Client,
+	org,
+	repo string,
+	pr int,
+) []string {
 	opt := &github.ListOptions{PerPage: 100}
 	var shas []string
 
 	for {
-		commits, res, err := client.PullRequests.ListCommits(context.Background(), org, repo, pr, opt)
+		commits, res, err := client.PullRequests.ListCommits(ctx, org, repo, pr, opt)
 		if err != nil {
 			break
 		}
@@ -109,7 +129,15 @@ func getMergeCommitSHAs(client *github.Client, org, repo string, pr int) []strin
 	return shas
 }
 
-func getRepositoryReport(client *github.Client, repo *github.Repository, user, org string, since, until time.Time) ([]string, error) {
+func getRepositoryReport(
+	ctx context.Context,
+	client *github.Client,
+	repo *github.Repository,
+	user,
+	org string,
+	since,
+	until time.Time,
+) ([]string, error) {
 	repoName := repo.GetName()
 	prRe := regexp.MustCompile(`\(#(\d+)\)`)
 	opt := &github.CommitsListOptions{
@@ -121,7 +149,7 @@ func getRepositoryReport(client *github.Client, repo *github.Repository, user, o
 
 	var messages []string
 	for {
-		commits, res, err := client.Repositories.ListCommits(context.Background(), org, repoName, opt)
+		commits, res, err := client.Repositories.ListCommits(ctx, org, repoName, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +161,7 @@ func getRepositoryReport(client *github.Client, repo *github.Repository, user, o
 			if m := prRe.FindStringSubmatch(summary); m != nil {
 				prNum, _ := strconv.Atoi(m[1])
 				cleanSummary := strings.TrimSpace(prRe.ReplaceAllString(summary, ""))
-				shas := getMergeCommitSHAs(client, org, repoName, prNum)
+				shas := getMergeCommitSHAs(ctx, client, org, repoName, prNum)
 				messages = append(messages, fmt.Sprintf("#%d: %s (%s)", prNum, cleanSummary, strings.Join(shas, ", ")))
 			} else {
 				messages = append(messages, fmt.Sprintf("%s (%s)", summary, c.GetSHA()[:7]))
