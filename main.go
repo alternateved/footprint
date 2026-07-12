@@ -69,11 +69,13 @@ func main() {
 
 	prRe := regexp.MustCompile(`\(#(\d+)\)`)
 	for _, repo := range repos {
-		messages, err := getRepositoryReport(ctx, client, repo, user, org, since, until, prRe)
+		repoName := repo.GetName()
+		messages, err := getRepositoryReport(ctx, client, user, org, repoName, since, until, prRe)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("Failure for \"%s\" repository while fetching report: %v\n", repoName, err)
+			continue
 		}
-		printReport(repo.GetName(), messages)
+		printReport(repoName, messages)
 	}
 }
 
@@ -133,14 +135,13 @@ func getMergeCommitSHAs(
 func getRepositoryReport(
 	ctx context.Context,
 	client *github.Client,
-	repo *github.Repository,
 	user,
-	org string,
+	org,
+	repoName string,
 	since,
 	until time.Time,
 	prRe *regexp.Regexp,
 ) ([]string, error) {
-	repoName := repo.GetName()
 	opt := &github.CommitsListOptions{
 		Author:      user,
 		Since:       since,
