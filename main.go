@@ -188,7 +188,7 @@ func fetchReports(
 	until time.Time,
 ) []report {
 	var wg sync.WaitGroup
-	prRe := regexp.MustCompile(`\(#(\d+)\)`)
+	prRe := regexp.MustCompile(`\(#(\d+)\)$`)
 	reports := make([]report, len(repos))
 	sem := make(chan struct{}, 5)
 
