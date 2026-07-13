@@ -59,21 +59,12 @@ Flags:
 	}
 
 	ghToken := resolveToken()
-
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
-
 	client, err := github.NewClient(github.WithAuthToken(ghToken))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	since := time.Date(*year, time.Month(*month), 1, 0, 0, 0, 0, time.UTC)
-	until := since.AddDate(0, 1, 0).Add(-time.Nanosecond)
+	since, until := monthRange(*year, *month)
 
 	fmt.Printf("Report for user '%s' in organization '%s' (%s - %s)\n\n",
 		*user,
@@ -81,6 +72,13 @@ Flags:
 		since.Format(time.DateOnly),
 		until.Format(time.DateOnly),
 	)
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
 	repos, err := fetchRepositories(ctx, client, *org)
 	if err != nil {
@@ -104,6 +102,12 @@ func resolveToken() string {
 	}
 
 	return strings.TrimSpace(string(out))
+}
+
+func monthRange(year, month int) (since, until time.Time) {
+	since = time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	until = since.AddDate(0, 1, 0).Add(-time.Nanosecond)
+	return since, until
 }
 
 func fetchRepositories(
