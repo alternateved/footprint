@@ -4,8 +4,20 @@ Generate a per-repository report of a user's commits and squash-merged pull requ
 
 ## Installation
 
+Grab a static binary from [releases page](https://github.com/alternateved/footprint/releases) and install it in your `$PATH`.
+
+Or install it with Go:
+
 ```sh
 go install github.com/alternateved/footprint@latest
+```
+
+Or build it from source:
+
+```sh
+git clone https://github.com/alternateved/footprint
+cd footprint
+make install
 ```
 
 ## Authentication
