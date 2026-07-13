@@ -24,6 +24,42 @@ type report struct {
 }
 
 func main() {
+	user, org, year, month := initializeFlags()
+
+	ghToken := resolveToken()
+	client, err := github.NewClient(github.WithAuthToken(ghToken))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	since, until := monthRange(year, month)
+
+	fmt.Printf("Report for user '%s' in organization '%s' (%s - %s)\n\n",
+		user,
+		org,
+		since.Format(time.DateOnly),
+		until.Format(time.DateOnly),
+	)
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	repos, err := fetchRepositories(ctx, client, org)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	reports := fetchReports(ctx, client, repos, user, org, since, until)
+	for _, report := range reports {
+		printReport(report)
+	}
+}
+
+func initializeFlags() (string, string, int, int) {
 	user := flag.String("u", "", "GitHub username")
 	org := flag.String("o", "", "GitHub organization")
 	year := flag.Int("y", time.Now().Year(), "year")
@@ -58,37 +94,7 @@ Flags:
 		log.Fatal("month must be between 1 and 12")
 	}
 
-	ghToken := resolveToken()
-	client, err := github.NewClient(github.WithAuthToken(ghToken))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	since, until := monthRange(*year, *month)
-
-	fmt.Printf("Report for user '%s' in organization '%s' (%s - %s)\n\n",
-		*user,
-		*org,
-		since.Format(time.DateOnly),
-		until.Format(time.DateOnly),
-	)
-
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
-
-	repos, err := fetchRepositories(ctx, client, *org)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	reports := fetchReports(ctx, client, repos, *user, *org, since, until)
-	for _, report := range reports {
-		printReport(report)
-	}
+	return *user, *org, *year, *month
 }
 
 func resolveToken() string {
