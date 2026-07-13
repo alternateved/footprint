@@ -71,9 +71,6 @@ func initializeFlags() (string, string, int, int) {
 Usage:
   footprint -u <USER> -o <ORG> [-y <YEAR>] [-m <MONTH>]
 
-Generates a per-repository list of commits and squash-merged PRs
-authored by the given user within the given month.
-
 Authentication:
   A GitHub token is resolved from, in order:
     1. GH_TOKEN environment variable
