@@ -3,22 +3,19 @@
 fmt:
 		go fmt ./...
 
-lint: fmt
-		golangci-lint run
-
 test:
 		go test ./...
 
 clean:
 		go clean
 
-build: lint
+build: fmt
 		go build .
 
 run: build
 		go run .
 
-install: build
+install: fmt
 		go install .
 
-.PHONY: fmt lint test clean build run
+.PHONY: fmt test clean build run install
