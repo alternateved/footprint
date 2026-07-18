@@ -19,13 +19,20 @@ import (
 	"github.com/google/go-github/v89/github"
 )
 
+type config struct {
+	user  string
+	org   string
+	since time.Time
+	until time.Time
+}
+
 type report struct {
 	name     string
 	messages []string
 }
 
 func main() {
-	user, org, year, month := initializeFlags()
+	config := initializeFlags()
 
 	ghToken := resolveToken()
 	client, err := github.NewClient(github.WithAuthToken(ghToken))
@@ -33,13 +40,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	since, until := monthRange(year, month)
-
 	fmt.Printf("Report for user '%s' in organization '%s' (%s - %s)\n\n",
-		user,
-		org,
-		since.Format(time.DateOnly),
-		until.Format(time.DateOnly),
+		config.user,
+		config.org,
+		config.since.Format(time.DateOnly),
+		config.until.Format(time.DateOnly),
 	)
 
 	ctx, stop := signal.NotifyContext(
@@ -49,18 +54,18 @@ func main() {
 	)
 	defer stop()
 
-	repos, err := fetchRepositories(ctx, client, org)
+	repos, err := fetchRepositories(ctx, client, config.org)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	reports := fetchReports(ctx, client, repos, user, org, since, until)
+	reports := fetchReports(ctx, client, repos, config)
 	for _, report := range reports {
 		printReport(report)
 	}
 }
 
-func initializeFlags() (string, string, int, int) {
+func initializeFlags() config {
 	user := flag.String("u", "", "GitHub username")
 	org := flag.String("o", "", "GitHub organization")
 	year := flag.Int("y", time.Now().Year(), "year")
@@ -94,7 +99,10 @@ Flags:
 	if flag.NArg() > 0 {
 		log.Fatal("provided too many arguments")
 	}
-	return *user, *org, *year, *month
+
+	since, until := monthRange(*year, *month)
+
+	return config{*user, *org, since, until}
 }
 
 func resolveToken() string {
@@ -180,23 +188,20 @@ func getMergeCommitSHAs(
 func getRepositoryReport(
 	ctx context.Context,
 	client *github.Client,
-	user,
-	org,
+	config config,
 	repoName string,
-	since,
-	until time.Time,
 	prRe *regexp.Regexp,
 ) ([]string, error) {
 	opt := &github.CommitsListOptions{
-		Author:      user,
-		Since:       since,
-		Until:       until,
+		Author:      config.user,
+		Since:       config.since,
+		Until:       config.until,
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
 	var messages []string
 	for {
-		commits, res, err := client.Repositories.ListCommits(ctx, org, repoName, opt)
+		commits, res, err := client.Repositories.ListCommits(ctx, config.org, repoName, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +213,7 @@ func getRepositoryReport(
 			if m := prRe.FindStringSubmatch(summary); m != nil {
 				prNum, _ := strconv.Atoi(m[1])
 				cleanSummary := strings.TrimSpace(prRe.ReplaceAllString(summary, ""))
-				shas, err := getMergeCommitSHAs(ctx, client, org, repoName, prNum)
+				shas, err := getMergeCommitSHAs(ctx, client, config.org, repoName, prNum)
 				if err != nil {
 					return nil, err
 				}
@@ -231,10 +236,7 @@ func fetchReports(
 	ctx context.Context,
 	client *github.Client,
 	repos []*github.Repository,
-	user,
-	org string,
-	since,
-	until time.Time,
+	config config,
 ) []report {
 	var wg sync.WaitGroup
 	prRe := regexp.MustCompile(`\(#(\d+)\)$`)
@@ -253,7 +255,7 @@ func fetchReports(
 			}
 
 			repoName := repo.GetName()
-			messages, err := getRepositoryReport(ctx, client, user, org, repoName, since, until, prRe)
+			messages, err := getRepositoryReport(ctx, client, config, repoName, prRe)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
