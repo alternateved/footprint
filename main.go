@@ -139,6 +139,13 @@ func fetchRepositories(
 	return repos, nil
 }
 
+func shortSHA(sha string) string {
+	if len(sha) < 7 {
+		return sha
+	}
+	return sha[:7]
+}
+
 func getMergeCommitSHAs(
 	ctx context.Context,
 	client *github.Client,
@@ -155,7 +162,8 @@ func getMergeCommitSHAs(
 			return nil, err
 		}
 		for _, c := range commits {
-			shas = append(shas, c.GetSHA()[:7])
+			sha := shortSHA(c.GetSHA())
+			shas = append(shas, sha)
 		}
 		if res.NextPage == 0 {
 			break
@@ -203,7 +211,8 @@ func getRepositoryReport(
 				}
 				messages = append(messages, fmt.Sprintf("#%d: %s (%s)", prNum, cleanSummary, strings.Join(shas, ", ")))
 			} else {
-				messages = append(messages, fmt.Sprintf("%s (%s)", summary, c.GetSHA()[:7]))
+				sha := shortSHA(c.GetSHA())
+				messages = append(messages, fmt.Sprintf("%s (%s)", summary, sha))
 			}
 		}
 		if res.NextPage == 0 {
