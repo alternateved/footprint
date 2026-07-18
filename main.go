@@ -90,7 +90,9 @@ Flags:
 	if *month < 1 || *month > 12 {
 		log.Fatal("month must be between 1 and 12")
 	}
-
+	if flag.NArg() > 0 {
+		log.Fatal("provided too many arguments")
+	}
 	return *user, *org, *year, *month
 }
 
