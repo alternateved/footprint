@@ -145,14 +145,14 @@ func getMergeCommitSHAs(
 	org,
 	repo string,
 	pr int,
-) []string {
+) ([]string, error) {
 	opt := &github.ListOptions{PerPage: 100}
 	var shas []string
 
 	for {
 		commits, res, err := client.PullRequests.ListCommits(ctx, org, repo, pr, opt)
 		if err != nil {
-			break
+			return nil, err
 		}
 		for _, c := range commits {
 			shas = append(shas, c.GetSHA()[:7])
@@ -163,7 +163,7 @@ func getMergeCommitSHAs(
 		opt.Page = res.NextPage
 	}
 
-	return shas
+	return shas, nil
 }
 
 func getRepositoryReport(
@@ -197,7 +197,10 @@ func getRepositoryReport(
 			if m := prRe.FindStringSubmatch(summary); m != nil {
 				prNum, _ := strconv.Atoi(m[1])
 				cleanSummary := strings.TrimSpace(prRe.ReplaceAllString(summary, ""))
-				shas := getMergeCommitSHAs(ctx, client, org, repoName, prNum)
+				shas, err := getMergeCommitSHAs(ctx, client, org, repoName, prNum)
+				if err != nil {
+					return nil, err
+				}
 				messages = append(messages, fmt.Sprintf("#%d: %s (%s)", prNum, cleanSummary, strings.Join(shas, ", ")))
 			} else {
 				messages = append(messages, fmt.Sprintf("%s (%s)", summary, c.GetSHA()[:7]))
