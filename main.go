@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -12,7 +11,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -54,12 +52,12 @@ func main() {
 	)
 	defer stop()
 
-	repos, err := fetchRepositories(ctx, client, config.org)
+	byRepo, err := fetchCommitsByRepo(ctx, client, config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	reports := fetchReports(ctx, client, repos, config)
+	reports := buildReports(ctx, client, config.org, byRepo)
 	for _, report := range reports {
 		printReport(report)
 	}
@@ -124,32 +122,6 @@ func monthRange(year, month int) (since, until time.Time) {
 	return since, until
 }
 
-func fetchRepositories(
-	ctx context.Context,
-	client *github.Client,
-	org string,
-) ([]*github.Repository, error) {
-	var repos []*github.Repository
-	opt := &github.RepositoryListByOrgOptions{
-		Type:        "all",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	for {
-		rep, res, err := client.Repositories.ListByOrg(ctx, org, opt)
-		if err != nil {
-			return nil, err
-		}
-		repos = append(repos, rep...)
-		if res.NextPage == 0 {
-			break
-		}
-		opt.Page = res.NextPage
-	}
-
-	return repos, nil
-}
-
 func shortSHA(sha string) string {
 	if len(sha) < 7 {
 		return sha
@@ -185,89 +157,77 @@ func getMergeCommitSHAs(
 	return shas, nil
 }
 
-func getRepositoryReport(
+func fetchCommitsByRepo(
 	ctx context.Context,
 	client *github.Client,
 	config config,
-	repoName string,
-	prRe *regexp.Regexp,
-) ([]string, error) {
-	opt := &github.CommitsListOptions{
-		Author:      config.user,
-		Since:       config.since,
-		Until:       config.until,
+) (map[string][]*github.CommitResult, error) {
+	query := fmt.Sprintf(
+		"author:%s org:%s committer-date:%s..%s",
+		config.user,
+		config.org,
+		config.since.Format(time.DateOnly),
+		config.until.Format(time.DateOnly),
+	)
+
+	opt := &github.SearchOptions{
+		Sort:        "committer-date",
+		Order:       "asc",
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
-	var messages []string
+	byRepo := make(map[string][]*github.CommitResult)
 	for {
-		commits, res, err := client.Repositories.ListCommits(ctx, config.org, repoName, opt)
+		result, res, err := client.Search.Commits(ctx, query, opt)
 		if err != nil {
 			return nil, err
 		}
 
-		for _, c := range commits {
-			msg := c.GetCommit().GetMessage()
-			summary := strings.SplitN(msg, "\n", 2)[0]
-
-			if m := prRe.FindStringSubmatch(summary); m != nil {
-				prNum, _ := strconv.Atoi(m[1])
-				cleanSummary := strings.TrimSpace(prRe.ReplaceAllString(summary, ""))
-				shas, err := getMergeCommitSHAs(ctx, client, config.org, repoName, prNum)
-				if err != nil {
-					return nil, err
-				}
-				messages = append(messages, fmt.Sprintf("#%d: %s (%s)", prNum, cleanSummary, strings.Join(shas, ", ")))
-			} else {
-				sha := shortSHA(c.GetSHA())
-				messages = append(messages, fmt.Sprintf("%s (%s)", summary, sha))
-			}
+		for _, c := range result.Commits {
+			repoName := c.GetRepository().GetName()
+			byRepo[repoName] = append(byRepo[repoName], c)
 		}
+
 		if res.NextPage == 0 {
 			break
 		}
 		opt.Page = res.NextPage
 	}
 
-	return messages, nil
+	return byRepo, nil
 }
 
-func fetchReports(
+func buildReports(
 	ctx context.Context,
 	client *github.Client,
-	repos []*github.Repository,
-	config config,
+	org string,
+	byRepo map[string][]*github.CommitResult,
 ) []report {
-	var wg sync.WaitGroup
 	prRe := regexp.MustCompile(`\(#(\d+)\)$`)
-	reports := make([]report, len(repos))
-	sem := make(chan struct{}, 5)
+	reports := make([]report, 0, len(byRepo))
 
-	for i, repo := range repos {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+	for repoName, commits := range byRepo {
+		messages := make([]string, 0, len(commits))
 
-			if ctx.Err() != nil {
-				return
-			}
+		for _, c := range commits {
+			summary := strings.SplitN(c.GetCommit().GetMessage(), "\n", 2)[0]
+			sha := shortSHA(c.GetSHA())
 
-			repoName := repo.GetName()
-			messages, err := getRepositoryReport(ctx, client, config, repoName, prRe)
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return
+			if m := prRe.FindStringSubmatch(summary); m != nil {
+				prNum, _ := strconv.Atoi(m[1])
+				clean := strings.TrimSpace(prRe.ReplaceAllString(summary, ""))
+				shas, err := getMergeCommitSHAs(ctx, client, org, repoName, prNum)
+				if err != nil {
+					shas = []string{sha}
+					log.Printf("#%d in %s: falling back to merge SHA", prNum, clean)
 				}
-				log.Printf("Failure for \"%s\" repository while fetching report: %v\n", repoName, err)
-				return
+				messages = append(messages, fmt.Sprintf("#%d: %s (%s)", prNum, clean, strings.Join(shas, ", ")))
+			} else {
+				messages = append(messages, fmt.Sprintf("%s (%s)", summary, sha))
 			}
-			reports[i] = report{repoName, messages}
-		}()
+		}
+		reports = append(reports, report{repoName, messages})
 	}
-	wg.Wait()
-
 	return reports
 }
 
