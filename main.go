@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -247,9 +248,16 @@ func fetchReports(
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			if ctx.Err() != nil {
+				return
+			}
+
 			repoName := repo.GetName()
 			messages, err := getRepositoryReport(ctx, client, user, org, repoName, since, until, prRe)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
 				log.Printf("Failure for \"%s\" repository while fetching report: %v\n", repoName, err)
 				return
 			}
