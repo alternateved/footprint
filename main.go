@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -206,7 +208,8 @@ func buildReports(
 	prRe := regexp.MustCompile(`\(#(\d+)\)$`)
 	reports := make([]report, 0, len(byRepo))
 
-	for repoName, commits := range byRepo {
+	for _, repoName := range slices.Sorted(maps.Keys(byRepo)) {
+		commits := byRepo[repoName]
 		messages := make([]string, 0, len(commits))
 
 		for _, c := range commits {
