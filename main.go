@@ -232,11 +232,9 @@ func buildReports(
 }
 
 func printReport(report report) {
-	if len(report.messages) > 0 {
-		fmt.Printf("Repository \"%s\" contributions:\n", report.name)
-		for _, m := range report.messages {
-			fmt.Println(m)
-		}
-		fmt.Println()
+	fmt.Printf("Repository \"%s\" contributions:\n", report.name)
+	for _, m := range report.messages {
+		fmt.Println(m)
 	}
+	fmt.Println()
 }
