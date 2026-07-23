@@ -19,6 +19,12 @@ import (
 	"github.com/google/go-github/v89/github"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 type config struct {
 	user  string
 	org   string
@@ -70,6 +76,8 @@ func initializeFlags() config {
 	org := flag.String("o", "", "GitHub organization")
 	year := flag.Int("y", time.Now().Year(), "year")
 	month := flag.Int("m", int(time.Now().Month()), "month")
+	help := flag.Bool("h", false, "print footprint's help")
+	version := flag.Bool("v", false, "print footprint's version")
 
 	flag.Usage = func() {
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `footprint - report a user's monthly contributions in an org
@@ -89,6 +97,14 @@ Flags:
 
 	flag.Parse()
 
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
+	if *version {
+		printVersion()
+		os.Exit(0)
+	}
 	if *user == "" || *org == "" {
 		flag.Usage()
 		os.Exit(1)
@@ -102,7 +118,16 @@ Flags:
 
 	since, until := monthRange(*year, *month)
 
-	return config{*user, *org, since, until}
+	return config{
+		user:  *user,
+		org:   *org,
+		since: since,
+		until: until,
+	}
+}
+
+func printVersion() {
+	fmt.Printf("footprint %s (commit %s, built %s)\n", version, commit, date)
 }
 
 func resolveToken() string {
